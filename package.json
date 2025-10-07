@@ -1,0 +1,18 @@
+{
+  "name": "divebuddy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@react-navigation/native": "^7.1.18",
+    "@react-navigation/stack": "^7.4.9",
+    "@supabase/supabase-js": "^2.74.0",
+    "expo": "^54.0.12"
+  }
+}
