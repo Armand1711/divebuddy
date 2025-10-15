@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { View, Button, Text, Vibration } from 'react-native';
+import { View, Button, Text, Vibration, Image, StyleSheet } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 const GearCheckScreen = () => {
   const [result, setResult] = useState('');
+  const [imageUri, setImageUri] = useState(null); // State for image preview
   const API_TOKEN = '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'; // Hardcoded Hugging Face token
   const MODEL_ID = 'lmms-lab/LLaVA-OneVision-1.5-8B-Instruct'; // LLaVA-OneVision model
 
@@ -20,9 +21,12 @@ const GearCheckScreen = () => {
       const image = await ImagePicker.launchCameraAsync({ base64: true });
       if (image.canceled) {
         setResult('Photo capture canceled.');
+        setImageUri(null);
         return;
       }
 
+      // Set image URI for preview
+      setImageUri(image.assets[0].uri);
       const base64Image = `data:image/jpeg;base64,${image.assets[0].base64}`;
       const prompt = "Examine this scuba diving gear photo (tank, regulator, etc.). Provide a detailed description, focusing on any visible issues such as damage, low air gauge readings, or leaks.";
 
@@ -81,11 +85,38 @@ const GearCheckScreen = () => {
   };
 
   return (
-    <View style={{ padding: 10 }}>
+    <View style={styles.container}>
       <Button title="Check Gear with AI" onPress={checkGear} />
-      <Text style={{ marginTop: 10, fontSize: 16, maxWidth: '90%' }}>{result}</Text>
+      {imageUri && (
+        <Image
+          source={{ uri: imageUri }}
+          style={styles.preview}
+          resizeMode="contain"
+        />
+      )}
+      <Text style={styles.resultText}>{result}</Text>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 10,
+    alignItems: 'center',
+  },
+  preview: {
+    width: '90%',
+    height: 300,
+    marginVertical: 10,
+    borderRadius: 10,
+  },
+  resultText: {
+    marginTop: 10,
+    fontSize: 16,
+    maxWidth: '90%',
+    textAlign: 'center',
+  },
+});
 
 export default GearCheckScreen;
