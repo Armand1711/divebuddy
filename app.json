@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "divebuddy",
+    "slug": "divebuddy",
+    "version": "1.0.0",
+    "extra": {
+      "HF_API_TOKEN": "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"
+    }
+  }
+}

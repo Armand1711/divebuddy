@@ -1,50 +1,84 @@
 import React, { useState } from 'react';
-import { View, Button, Text, Vibration, Image, StyleSheet } from 'react-native';
+import { View, Button, Text, Vibration, Image, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import Constants from 'expo-constants';
+
+const HF_API_TOKEN =
+  Constants.expoConfig?.extra?.HF_API_TOKEN ||
+  Constants.manifest?.extra?.HF_API_TOKEN ||
+  process.env.HF_API_TOKEN ||
+  '';
+
+const MODEL_ID = 'prithivMLmods/Multimodal-VLM-v1.0';
 
 const GearCheckScreen = () => {
   const [result, setResult] = useState('');
-  const [imageUri, setImageUri] = useState(null); // State for image preview
-  const API_TOKEN = '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'; // Hardcoded Hugging Face token
-  const MODEL_ID = 'lmms-lab/LLaVA-OneVision-1.5-8B-Instruct'; // LLaVA-OneVision model
+  const [imageUri, setImageUri] = useState(null);
+  const [loading, setLoading] = useState(false);
 
   const checkGear = async () => {
     try {
-      // Request camera permissions
-      const { status } = await ImagePicker.requestCameraPermissionsAsync();
-      if (status !== 'granted') {
-        alert('Camera permissions are required to check gear.');
+      if (!HF_API_TOKEN) {
+        Alert.alert('Missing API token', 'HF_API_TOKEN is not configured in app.json extras.');
         return;
       }
 
-      // Launch camera
-      const image = await ImagePicker.launchCameraAsync({ base64: true });
-      if (image.canceled) {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission required', 'Camera permission is required to take a photo.');
+        return;
+      }
+
+      const image = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.8,
+      });
+
+      // Handle user cancel
+      if (image.cancelled || image.canceled) {
         setResult('Photo capture canceled.');
         setImageUri(null);
         return;
       }
 
-      // Set image URI for preview
-      setImageUri(image.assets[0].uri);
-      const base64Image = `data:image/jpeg;base64,${image.assets[0].base64}`;
-      const prompt = "Examine this scuba diving gear photo (tank, regulator, etc.). Provide a detailed description, focusing on any visible issues such as damage, low air gauge readings, or leaks.";
+      // New ImagePicker returns assets array
+      const asset = image.assets ? image.assets[0] : image;
+      if (!asset || (!asset.uri && !asset.base64)) {
+        setResult('No image captured.');
+        return;
+      }
 
-      // Call Hugging Face Inference API
+      setImageUri(asset.uri || null);
+      const base64Image = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : null;
+
+      const prompt =
+        'Analyze this scuba diving gear photo (tank, regulator, etc.). Provide a detailed description, focusing on any visible issues such as damage, low air gauge readings, or leaks. Highlight safety concerns.';
+
+      setLoading(true);
+      setResult('');
+
+      const body = {
+        inputs: prompt,
+        // Some HF multimodal endpoints accept {"image": "<data-url>"} alongside inputs.
+        // Keep both in case model expects image field.
+        image: base64Image,
+      };
+
       const response = await fetch(`https://api-inference.huggingface.co/models/${MODEL_ID}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${API_TOKEN}`,
+          Authorization: `Bearer ${HF_API_TOKEN}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ inputs: prompt, image: base64Image }),
+        body: JSON.stringify(body),
       });
 
-      // Check HTTP status
+      setLoading(false);
+
       if (!response.ok) {
         const errorText = await response.text();
         setResult(`API Error: HTTP ${response.status} - ${errorText}`);
-        alert(`API request failed (Status ${response.status}). Try again later.`);
+        Alert.alert('API Error', `Request failed (status ${response.status}).`);
         console.log('Raw error:', errorText);
         return;
       }
@@ -52,34 +86,33 @@ const GearCheckScreen = () => {
       const data = await response.json();
       if (data.error) {
         setResult(`API Error: ${data.error}`);
-        alert('API error: Check token or model availability.');
-        console.log('API response:', JSON.stringify(data));
+        Alert.alert('API Error', 'Check token or model availability.');
+        console.log('API response error:', JSON.stringify(data));
         return;
       }
 
-      // Parse response
-      let description = 'No response received from AI.';
-      if (Array.isArray(data)) {
-        description = data[0]?.generated_text || data[0]?.text || 'No valid response';
-      } else if (data.generated_text) {
-        description = data.generated_text;
+      let description = 'No response from model.';
+      if (Array.isArray(data) && data.length > 0) {
+        description = data[0]?.generated_text || data[0]?.text || JSON.stringify(data[0]);
+      } else if (typeof data === 'object') {
+        description = data.generated_text || data.text || JSON.stringify(data);
       } else {
-        description = JSON.stringify(data); // Debug fallback
-        console.log('Unexpected response format:', JSON.stringify(data));
+        description = String(data);
       }
+
       setResult(description);
 
-      // Check for issues
-      const issues = ['damage', 'low', 'leak', 'broken', 'crack'];
-      if (issues.some(issue => description.toLowerCase().includes(issue))) {
-        Vibration.vibrate([0, 500, 200, 500]);
-        alert('Issue detected in gear! Check description for details.');
+      const issues = ['damage', 'low', 'leak', 'broken', 'crack', 'leaking'];
+      if (issues.some((issue) => description.toLowerCase().includes(issue))) {
+        Vibration.vibrate(500);
+        Alert.alert('Issue detected', 'The AI detected a potential issue in the gear. See description.');
       } else {
-        alert('Gear appears to be in good condition.');
+        Alert.alert('OK', 'Gear appears to be in good condition.');
       }
     } catch (error) {
+      setLoading(false);
       setResult(`Error: ${error.message}`);
-      alert('Failed to analyze gear photo. Check your internet or try again.');
+      Alert.alert('Error', 'Failed to analyze gear photo.');
       console.log('Error details:', error);
     }
   };
@@ -87,13 +120,10 @@ const GearCheckScreen = () => {
   return (
     <View style={styles.container}>
       <Button title="Check Gear with AI" onPress={checkGear} />
-      {imageUri && (
-        <Image
-          source={{ uri: imageUri }}
-          style={styles.preview}
-          resizeMode="contain"
-        />
-      )}
+      {loading && <ActivityIndicator style={{ marginTop: 12 }} size="large" />}
+      {imageUri ? (
+        <Image source={{ uri: imageUri }} style={styles.preview} resizeMode="contain" />
+      ) : null}
       <Text style={styles.resultText}>{result}</Text>
     </View>
   );
@@ -104,6 +134,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 10,
     alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   preview: {
     width: '90%',
